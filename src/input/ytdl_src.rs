@@ -32,11 +32,14 @@ const YOUTUBE_DL_COMMAND: &str = if cfg!(feature = "youtube-dlc") {
 /// and `yt-dlp` features respectively.
 ///
 /// [`Restartable::ytdl`]: crate::input::restartable::Restartable::ytdl
-pub async fn ytdl(uri: impl AsRef<str>) -> Result<Input> {
-    _ytdl(uri.as_ref(), &[]).await
+pub async fn ytdl(uri: impl AsRef<str>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
+    match ffmpeg_extra_args {
+        None => _ytdl(uri.as_ref(), &[], &[]).await,
+        Some(ffmpeg_extra_args) => _ytdl(uri.as_ref(), &[], ffmpeg_extra_args.as_slice()).await
+    }
 }
 
-pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str]) -> Result<Input> {
+pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&str]) -> Result<Input> {
     let ytdl_args = [
         "--print-json",
         "-f",
@@ -62,6 +65,8 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str]) -> Result<Input> {
         "pcm_f32le",
         "-",
     ];
+
+    let ffmpeg_args = ffmpeg_extra_args.iter().chain(ffmpeg_args.iter()).copied().collect::<Vec<&str>>();
 
     let mut youtube_dl = Command::new(YOUTUBE_DL_COMMAND)
         .args(&ytdl_args)
@@ -90,8 +95,8 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str]) -> Result<Input> {
 
         (s, out)
     })
-    .await
-    .map_err(|_| Error::Metadata)?;
+        .await
+        .map_err(|_| Error::Metadata)?;
 
     youtube_dl.stderr = Some(returned_stderr);
 
@@ -101,7 +106,7 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str]) -> Result<Input> {
         .args(pre_args)
         .arg("-i")
         .arg("-")
-        .args(&ffmpeg_args)
+        .args(ffmpeg_args.as_slice())
         .stdin(taken_stdout)
         .stderr(Stdio::null())
         .stdout(Stdio::piped())
@@ -171,6 +176,6 @@ pub(crate) async fn _ytdl_metadata(uri: &str) -> Result<Metadata> {
 /// and `yt-dlp` features respectively.
 ///
 /// [`Restartable::ytdl_search`]: crate::input::restartable::Restartable::ytdl_search
-pub async fn ytdl_search(name: impl AsRef<str>) -> Result<Input> {
-    ytdl(&format!("ytsearch1:{}", name.as_ref())).await
+pub async fn ytdl_search(name: impl AsRef<str>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
+    ytdl(&format!("ytsearch1:{}", name.as_ref()), ffmpeg_extra_args).await
 }

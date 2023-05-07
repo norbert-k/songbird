@@ -85,7 +85,7 @@ impl Restartable {
     ///
     /// [`Track::make_playable`]: crate::tracks::Track::make_playable
     /// [`TrackHandle::make_playable`]: crate::tracks::TrackHandle::make_playable
-    pub async fn new(mut recreator: impl Restart + Send + 'static, lazy: bool) -> Result<Self> {
+    pub async fn new(mut recreator: impl Restart + Send + 'static, lazy: bool, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Self> {
         if lazy {
             recreator
                 .lazy_init()
@@ -101,7 +101,7 @@ impl Restartable {
                     ),
                 })
         } else {
-            recreator.call_restart(None).await.map(move |source| Self {
+            recreator.call_restart(None, ffmpeg_extra_args).await.map(move |source| Self {
                 async_handle: None,
                 position: 0,
                 source: LazyProgress::Live(source.into(), Some(Box::new(recreator))),
@@ -113,8 +113,9 @@ impl Restartable {
     pub async fn ffmpeg<P: AsRef<OsStr> + Send + Clone + Sync + 'static>(
         path: P,
         lazy: bool,
+        ffmpeg_extra_args: Option<Vec<&str>>
     ) -> Result<Self> {
-        Self::new(FfmpegRestarter { path }, lazy).await
+        Self::new(FfmpegRestarter { path }, lazy, ffmpeg_extra_args).await
     }
 
     /// Create a new restartable ytdl source.
@@ -124,16 +125,17 @@ impl Restartable {
     pub async fn ytdl<P: AsRef<str> + Send + Clone + Sync + 'static>(
         uri: P,
         lazy: bool,
+        ffmpeg_extra_args: Option<Vec<&str>>
     ) -> Result<Self> {
-        Self::new(YtdlRestarter { uri }, lazy).await
+        Self::new(YtdlRestarter { uri }, lazy, ffmpeg_extra_args).await
     }
 
     /// Create a new restartable ytdl source, using the first result of a youtube search.
     ///
     /// The cost of restarting and seeking will probably be *very* high:
     /// expect a pause if you seek backwards.
-    pub async fn ytdl_search(name: impl AsRef<str>, lazy: bool) -> Result<Self> {
-        Self::ytdl(format!("ytsearch1:{}", name.as_ref()), lazy).await
+    pub async fn ytdl_search(name: impl AsRef<str>, lazy: bool, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Self> {
+        Self::ytdl(format!("ytsearch1:{}", name.as_ref()), lazy, ffmpeg_extra_args).await
     }
 
     pub(crate) fn prep_with_handle(&mut self, handle: Handle) {
@@ -157,7 +159,7 @@ impl Restartable {
 #[async_trait]
 pub trait Restart {
     /// Tries to create a replacement source.
-    async fn call_restart(&mut self, time: Option<Duration>) -> Result<Input>;
+    async fn call_restart(&mut self, time: Option<Duration>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input>;
 
     /// Optionally retrieve metadata for a source which has been lazily initialised.
     ///
@@ -168,18 +170,18 @@ pub trait Restart {
 }
 
 struct FfmpegRestarter<P>
-where
-    P: AsRef<OsStr> + Send + Sync,
+    where
+        P: AsRef<OsStr> + Send + Sync,
 {
     path: P,
 }
 
 #[async_trait]
 impl<P> Restart for FfmpegRestarter<P>
-where
-    P: AsRef<OsStr> + Send + Sync,
+    where
+        P: AsRef<OsStr> + Send + Sync,
 {
-    async fn call_restart(&mut self, time: Option<Duration>) -> Result<Input> {
+    async fn call_restart(&mut self, time: Option<Duration>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
         if let Some(time) = time {
             let is_stereo = is_stereo(self.path.as_ref())
                 .await
@@ -203,7 +205,7 @@ where
                 ],
                 Some(is_stereo),
             )
-            .await
+                .await
         } else {
             ffmpeg(self.path.as_ref()).await
         }
@@ -217,24 +219,26 @@ where
 }
 
 struct YtdlRestarter<P>
-where
-    P: AsRef<str> + Send + Sync,
+    where
+        P: AsRef<str> + Send + Sync,
 {
     uri: P,
 }
 
 #[async_trait]
 impl<P> Restart for YtdlRestarter<P>
-where
-    P: AsRef<str> + Send + Sync,
+    where
+        P: AsRef<str> + Send + Sync,
 {
-    async fn call_restart(&mut self, time: Option<Duration>) -> Result<Input> {
+    async fn call_restart(&mut self, time: Option<Duration>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
         if let Some(time) = time {
             let ts = format!("{:.3}", time.as_secs_f64());
-
-            _ytdl(self.uri.as_ref(), &["-ss", &ts]).await
+            match ffmpeg_extra_args {
+                None => _ytdl(self.uri.as_ref(), &["-ss", &ts], &[]).await,
+                Some(ffmpeg_extra_args) => _ytdl(self.uri.as_ref(), &["-ss", &ts], ffmpeg_extra_args.as_slice()).await
+            }
         } else {
-            ytdl(self.uri.as_ref()).await
+            ytdl(self.uri.as_ref(), ffmpeg_extra_args).await
         }
     }
 
@@ -251,7 +255,7 @@ impl From<Restartable> for Input {
             LazyProgress::Dead(ref mut m, _rec, kind, container) => {
                 let stereo = m.channels == Some(2);
                 (Some(m.take()), stereo, kind.clone(), *container)
-            },
+            }
             LazyProgress::Live(ref mut input, _rec) => (
                 Some(input.metadata.take()),
                 input.stereo,
@@ -298,7 +302,7 @@ impl Read for Restartable {
                     *el = 0;
                 }
                 (Ok(buffer.len()), false, new_chan)
-            },
+            }
             Live(source, _) => (Read::read(source, buffer), true, None),
             Working(_, _, _, chan) => {
                 match chan.try_recv() {
@@ -308,30 +312,30 @@ impl Read for Restartable {
                         let bytes_read = Read::read(&mut new_source, buffer);
 
                         (bytes_read, true, Some(Live(new_source, Some(recreator))))
-                    },
+                    }
                     Ok(Err(source_error)) => {
                         let e = Err(IoError::new(
                             IoErrorKind::UnexpectedEof,
                             format!("Failed to create new reader: {:?}.", source_error),
                         ));
                         (e, false, None)
-                    },
+                    }
                     Err(TryRecvError::Empty) => {
                         // Output all zeroes.
                         for el in buffer.iter_mut() {
                             *el = 0;
                         }
                         (Ok(buffer.len()), false, None)
-                    },
+                    }
                     Err(_) => {
                         let e = Err(IoError::new(
                             IoErrorKind::UnexpectedEof,
                             "Failed to create new reader: dropped.",
                         ));
                         (e, false, None)
-                    },
+                    }
                 }
-            },
+            }
         };
 
         if let Some(src) = next_source {
@@ -380,7 +384,7 @@ impl Seek for Restartable {
                         };
 
                         self.position = offset;
-                    },
+                    }
                     Live(input, rec) => {
                         if offset < self.position {
                             // regen at given start point
@@ -406,17 +410,17 @@ impl Seek for Restartable {
                             // march on with live source.
                             self.position += input.consume(offset - self.position);
                         }
-                    },
+                    }
                     Working(_, _, _, _) => {
                         return Err(IoError::new(
                             IoErrorKind::Interrupted,
                             "Previous seek in progress.",
                         ));
-                    },
+                    }
                 }
 
                 Ok(offset as u64)
-            },
+            }
             End(_offset) => Err(IoError::new(
                 IoErrorKind::InvalidInput,
                 "End point for Restartables is not known.",
@@ -439,7 +443,7 @@ fn regenerate_channel(
 
         handle.spawn(async move {
             let ret_val = rec
-                .call_restart(Some(utils::byte_count_to_timestamp(offset, stereo)))
+                .call_restart(Some(utils::byte_count_to_timestamp(offset, stereo)), None)
                 .await;
 
             let _ = tx.send(ret_val.map(Box::new).map(|v| (v, rec)));
