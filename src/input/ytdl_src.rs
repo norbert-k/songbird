@@ -60,8 +60,8 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&st
         "48000",
         "-acodec",
         "pcm_f32le",
-        "-i", // add input from youtube_dl output
-        "-",
+        "-i",
+        "-", // read input from youtube_dl
         "-af", // add audio filter
         "firequalizer=gain_entry='entry(0,-10);entry(250,-5);entry(2000,5);entry(8000,-5);entry(16000,-20)':scale=gain",
         "-f",
@@ -72,10 +72,8 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&st
         "48000",
         "-acodec",
         "pcm_f32le",
-        "-",
+        "-", // output to stdout
     ];
-
-    let ffmpeg_args = ffmpeg_extra_args.iter().chain(ffmpeg_args.iter()).copied().collect::<Vec<&str>>();
 
     let mut youtube_dl = Command::new(YOUTUBE_DL_COMMAND)
         .args(&ytdl_args)
