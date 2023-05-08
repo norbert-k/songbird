@@ -113,7 +113,7 @@ impl Restartable {
     pub async fn ffmpeg<P: AsRef<OsStr> + Send + Clone + Sync + 'static>(
         path: P,
         lazy: bool,
-        ffmpeg_extra_args: Option<Vec<&str>>
+        ffmpeg_extra_args: Option<Vec<&str>>,
     ) -> Result<Self> {
         Self::new(FfmpegRestarter { path }, lazy, ffmpeg_extra_args).await
     }
@@ -125,7 +125,7 @@ impl Restartable {
     pub async fn ytdl<P: AsRef<str> + Send + Clone + Sync + 'static>(
         uri: P,
         lazy: bool,
-        ffmpeg_extra_args: Option<Vec<&str>>
+        ffmpeg_extra_args: Option<Vec<&str>>,
     ) -> Result<Self> {
         Self::new(YtdlRestarter { uri }, lazy, ffmpeg_extra_args).await
     }
@@ -233,10 +233,7 @@ impl<P> Restart for YtdlRestarter<P>
     async fn call_restart(&mut self, time: Option<Duration>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
         if let Some(time) = time {
             let ts = format!("{:.3}", time.as_secs_f64());
-            match ffmpeg_extra_args {
-                None => _ytdl(self.uri.as_ref(), &["-ss", &ts], &[]).await,
-                Some(ffmpeg_extra_args) => _ytdl(self.uri.as_ref(), &["-ss", &ts], ffmpeg_extra_args.as_slice()).await
-            }
+            _ytdl(self.uri.as_ref(), &["-ss", &ts], ffmpeg_extra_args.unwrap_or_default().as_slice()).await
         } else {
             ytdl(self.uri.as_ref(), ffmpeg_extra_args).await
         }

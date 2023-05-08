@@ -33,7 +33,7 @@ const YOUTUBE_DL_COMMAND: &str = if cfg!(feature = "youtube-dlc") {
 ///
 /// [`Restartable::ytdl`]: crate::input::restartable::Restartable::ytdl
 pub async fn ytdl(uri: impl AsRef<str>, ffmpeg_extra_args: Option<Vec<&str>>) -> Result<Input> {
-    _ytdl(uri.as_ref(), &[], ffmpeg_extra_args.as_slice()).await
+    _ytdl(uri.as_ref(), &[], ffmpeg_extra_args.unwrap_or_default().as_slice()).await
 }
 
 pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&str]) -> Result<Input> {
