@@ -97,13 +97,17 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&st
 
     let taken_stdout = youtube_dl.stdout.take().ok_or(Error::Stdout)?;
 
-    let ffmpeg = Command::new("ffmpeg")
+    let mut ffmpeg = Command::new("ffmpeg")
         .args(pre_args)
         .arg("-i")
         .arg("-")
-        .arg("-af")
-        .arg("firequalizer=gain_entry='entry(0,-10);entry(250,-5);entry(2000,5);entry(8000,-5);entry(16000,-20)':scale=gain")
-        .args(ffmpeg_args.as_slice())
+        .args(ffmpeg_args)
+        .args(ffmpeg_extra_args);
+
+    let ffmpeg_cmd = format!("{:?}", ffmpeg);
+    println!("FFMPEG command: {}", ffmpeg_cmd);
+
+    let ffmpeg = ffmpeg
         .stdin(taken_stdout)
         .stderr(Stdio::null())
         .stdout(Stdio::piped())
