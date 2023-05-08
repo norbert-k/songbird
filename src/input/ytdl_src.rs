@@ -60,6 +60,18 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&st
         "48000",
         "-acodec",
         "pcm_f32le",
+        "-i", // add input from youtube_dl output
+        "-",
+        "-af", // add audio filter
+        "firequalizer=gain_entry='entry(0,-10);entry(250,-5);entry(2000,5);entry(8000,-5);entry(16000,-20)':scale=gain",
+        "-f",
+        "s16le",
+        "-ac",
+        "2",
+        "-ar",
+        "48000",
+        "-acodec",
+        "pcm_f32le",
         "-",
     ];
 
