@@ -58,14 +58,11 @@ pub(crate) async fn _ytdl(uri: &str, pre_args: &[&str], ffmpeg_extra_args: &[&st
         "2",
         "-ar",
         "48000",
+        "-af",
+        "\"firequalizer=gain_entry='entry(0,10);entry(250,10);entry(500,-10);entry(1000,-10);entry(2000,-10);entry(4000,-10);entry(8000,-10);entry(16000,-10)'\"",
         "-acodec",
         "pcm_f32le",
         "-",
-    ];
-
-    let ffmpeg_extra_args = [
-        "-af",
-        "\"firequalizer=gain_entry='entry(0,10);entry(250,10);entry(500,-10);entry(1000,-10);entry(2000,-10);entry(4000,-10);entry(8000,-10);entry(16000,-10)'\""
     ];
 
     let ffmpeg_args = ffmpeg_extra_args.iter().chain(ffmpeg_args.iter()).copied().collect::<Vec<&str>>();
